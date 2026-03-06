@@ -95,14 +95,6 @@ class RoleController extends Controller
             ], 404);
         }
 
-        // Prevent updating system roles
-        if ($role->is_system) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot update system role'
-            ], 403);
-        }
-
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'slug' => 'sometimes|required|string|unique:roles,slug,' . $id,
@@ -119,6 +111,21 @@ class RoleController extends Controller
             ], 422);
         }
 
+        // For system roles, only allow updating permissions, not name/slug/description
+        if ($role->is_system) {
+            // Only update permissions for system roles
+            if ($request->has('permissions')) {
+                $role->permissions()->sync($request->permissions);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'System role permissions updated successfully',
+                'data' => $role->load('permissions')
+            ], 200);
+        }
+
+        // For non-system roles, allow full update
         $role->update($request->only(['name', 'slug', 'description']));
 
         if ($request->has('permissions')) {

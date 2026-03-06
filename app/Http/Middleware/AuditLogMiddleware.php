@@ -150,7 +150,15 @@ class AuditLogMiddleware
 
         // Add specific details for certain actions
         if ($method === 'POST' && str_contains($path, 'login')) {
-            $description = "User logged into the system";
+            $userRole = auth()->user()->role ?? 'Unknown';
+            $userEmail = auth()->user()->email ?? 'Unknown';
+            
+            if (in_array($userRole, ['admin', 'staff'])) {
+                $description = "User logged into the admin portal";
+            } else {
+                // This should not happen due to AuthController blocking, but just in case
+                $description = "User ({$userEmail}) attempted to login to admin portal";
+            }
         } elseif ($method === 'POST' && str_contains($path, 'logout')) {
             $description = "User logged out from the system";
         } elseif ($method === 'POST' && str_contains($path, 'register')) {

@@ -106,6 +106,7 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/export/route-performance', [ExportController::class, 'exportRoutePerformance']);
     Route::get('/export/users', [ExportController::class, 'exportUsers']);
     Route::get('/export/analytics', [ExportController::class, 'exportAnalytics']);
+    Route::delete('/export/delete-file', [ExportController::class, 'deleteDownloadedFile']);
     
     // Admin and Staff only routes
     Route::middleware(['role:admin,staff'])->group(function () {

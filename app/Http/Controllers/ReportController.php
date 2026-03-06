@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Report;
+use App\Models\Notification;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
@@ -126,6 +128,9 @@ class ReportController extends Controller
 
             $report = Report::create($data);
 
+            // Auto-notify admins and staff when a report is created
+            $this->notifyAdminsAndStaff($report, 'created');
+
             return response()->json([
                 'success' => true,
                 'message' => 'Report created successfully',
@@ -223,7 +228,13 @@ class ReportController extends Controller
                 $data['photo'] = $path;
             }
 
+            // Store old status before update
+            $oldStatus = $report->status;
+            
             $report->update($data);
+
+            // Auto-notify reporter when admin/staff updates the report
+            $this->notifyReporter($report, $oldStatus);
 
             return response()->json([
                 'success' => true,
@@ -316,7 +327,13 @@ class ReportController extends Controller
             // Set updated_by_id to authenticated user
             $data['updated_by_id'] = auth()->id();
 
+            // Store old status before update
+            $oldStatus = $report->status;
+
             $report->update($data);
+
+            // Auto-notify reporter when status is updated
+            $this->notifyReporter($report, $oldStatus);
 
             return response()->json([
                 'success' => true,
@@ -442,6 +459,110 @@ class ReportController extends Controller
                 'message' => 'Failed to fetch report ranking',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Notify admins and staff when a new report is created
+     */
+    private function notifyAdminsAndStaff($report, $action)
+    {
+        try {
+            // Get all admin and staff users
+            $adminAndStaffIds = User::whereIn('role', ['admin', 'staff'])->pluck('id')->toArray();
+
+            if (empty($adminAndStaffIds)) {
+                return; // No admins or staff to notify
+            }
+
+            // Create notification data
+            $notificationData = [
+                'title' => 'New Report Submitted',
+                'message' => "A new report has been submitted by {$report->reporter_name}",
+                'description' => "Report ID: {$report->report_id} | Priority: {$report->priority} | Location: {$report->purok}, {$report->barangay}",
+                'type' => 'report',
+                'priority' => $report->priority === 'Urgent' ? 'high' : ($report->priority === 'Moderate' ? 'medium' : 'low'),
+                'action_url' => "/reports",
+                'metadata' => [
+                    'report_id' => $report->id,
+                    'report_number' => $report->report_id,
+                    'action' => $action,
+                    'priority' => $report->priority,
+                    'purok' => $report->purok,
+                    'barangay' => $report->barangay,
+                ],
+                'triggered_by_id' => $report->reporter_id,
+            ];
+
+            // Send notification to all admins and staff
+            Notification::notify($adminAndStaffIds, $notificationData);
+
+        } catch (\Exception $e) {
+            // Log error but don't fail the report creation
+            \Log::error('Failed to send report notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify the reporter when admin/staff updates the report
+     */
+    private function notifyReporter($report, $oldStatus)
+    {
+        try {
+            // Only notify if reporter exists
+            if (!$report->reporter_id) {
+                return;
+            }
+
+            // Get current authenticated user (admin/staff who updated)
+            $updatedBy = auth()->user();
+            
+            // Don't notify if the reporter is updating their own report
+            if ($updatedBy && $updatedBy->id === $report->reporter_id) {
+                return;
+            }
+
+            // Determine the message based on status change
+            $statusChanged = $oldStatus !== $report->status;
+            
+            if ($statusChanged) {
+                $message = "Your report ({$report->report_id}) status has been updated to: {$report->status}";
+                $title = "Report Status Updated";
+            } else {
+                $message = "Your report ({$report->report_id}) has been updated";
+                $title = "Report Updated";
+            }
+
+            // Add staff remarks to description if available
+            $description = "Report ID: {$report->report_id}";
+            if ($report->staff_remarks) {
+                $description .= " | Remarks: {$report->staff_remarks}";
+            }
+
+            // Create notification data
+            $notificationData = [
+                'title' => $title,
+                'message' => $message,
+                'description' => $description,
+                'type' => 'report',
+                'priority' => $statusChanged ? 'high' : 'medium',
+                'action_url' => "/reports",
+                'metadata' => [
+                    'report_id' => $report->id,
+                    'report_number' => $report->report_id,
+                    'old_status' => $oldStatus,
+                    'new_status' => $report->status,
+                    'status_changed' => $statusChanged,
+                ],
+                'triggered_by_id' => $updatedBy ? $updatedBy->id : null,
+            ];
+
+            // Send notification to the reporter
+            Notification::notify([$report->reporter_id], $notificationData);
+
+        } catch (\Exception $e) {
+            // Log error but don't fail the report update
+            \Log::error('Failed to send reporter notification: ' . $e->getMessage());
         }
     }
 }

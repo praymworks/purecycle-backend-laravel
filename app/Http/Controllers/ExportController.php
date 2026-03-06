@@ -35,7 +35,7 @@ class ExportController extends Controller
             $sheet->setTitle('Collections Report');
 
             // Header
-            $headers = ['Schedule ID', 'Route', 'Day', 'Date', 'Start Time', 'End Time', 'Status', 'Total Stops', 'Completed Stops', 'Progress %', 'Assigned Driver', 'Created By'];
+            $headers = ['Schedule ID', 'Route', 'Day', 'Date', 'Start Time', 'End Time', 'Status', 'Total Stops', 'Completed Stops', 'Progress %',  'Created By'];
             $sheet->fromArray($headers, null, 'A1');
 
             // Style header
@@ -60,7 +60,6 @@ class ExportController extends Controller
                     $schedule->getTotalStops(),
                     $schedule->getCompletedStops(),
                     $schedule->getProgressPercentage() . '%',
-                    $schedule->assignedDriver ? $schedule->assignedDriver->fullname : 'Unassigned',
                     $schedule->createdBy ? $schedule->createdBy->fullname : 'N/A',
                 ], null, 'A' . $row);
                 $row++;
@@ -416,6 +415,47 @@ class ExportController extends Controller
                 'success' => false,
                 'message' => 'Failed to export analytics report',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a downloaded export file from the server
+     */
+    public function deleteDownloadedFile(Request $request)
+    {
+        try {
+            $filename = $request->get('filename');
+
+            if (!$filename) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Filename is required',
+                ], 400);
+            }
+
+            // Security: strip any directory traversal, only allow filenames
+            $filename = basename($filename);
+            $filePath = public_path('uploads/downloads/' . $filename);
+
+            if (file_exists($filePath)) {
+                unlink($filePath);
+                return response()->json([
+                    'success' => true,
+                    'message' => 'File deleted successfully',
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'File not found',
+            ], 404);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete file',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

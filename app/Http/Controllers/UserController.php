@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\PurokLeader;
 use App\Models\BusinessOwner;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -178,7 +179,19 @@ class UserController extends Controller
             $data['password'] = Hash::make($request->password);
         }
 
+        // Store old status before update
+        $oldStatus = $user->status;
+
         $user->update($data);
+
+        // Check if status changed and send notifications
+        if ($request->has('status') && $oldStatus !== $request->status) {
+            if ($request->status === 'approved') {
+                $this->notifyUserApproval($user);
+            } elseif ($request->status === 'rejected') {
+                $this->notifyUserRejection($user);
+            }
+        }
 
         // Update role-specific records
         if ($request->has('valid_id_document') && $user->role === 'purok_leader') {
@@ -245,6 +258,9 @@ class UserController extends Controller
 
         $user->update(['status' => 'approved']);
 
+        // Notify the approved user
+        $this->notifyUserApproval($user);
+
         return response()->json([
             'success' => true,
             'message' => 'User approved successfully',
@@ -267,6 +283,9 @@ class UserController extends Controller
         }
 
         $user->update(['status' => 'rejected']);
+
+        // Notify the rejected user
+        $this->notifyUserRejection($user);
 
         return response()->json([
             'success' => true,
@@ -426,5 +445,119 @@ class UserController extends Controller
             'success' => true,
             'message' => 'Password changed successfully'
         ], 200);
+    }
+
+    /**
+     * Notify user when their account is approved
+     */
+    private function notifyUserApproval($user)
+    {
+        try {
+            // Determine user type for display
+            $userTypeDisplay = match($user->role) {
+                'purok_leader' => 'Purok Leader',
+                'business_owner' => 'Business Owner',
+                'admin' => 'Admin',
+                'staff' => 'Staff',
+                default => 'User'
+            };
+
+            // Create welcome notification data
+            $notificationData = [
+                'title' => 'Account Approved - Welcome!',
+                'message' => "Congratulations! Your {$userTypeDisplay} account has been approved.",
+                'description' => "You can now log in and access all features. Email: {$user->email}",
+                'type' => 'account',
+                'priority' => 'high',
+                'action_url' => null,
+                'metadata' => [
+                    'user_id' => $user->id,
+                    'user_role' => $user->role,
+                    'action' => 'approval',
+                    'status' => 'approved',
+                ],
+                'triggered_by_id' => auth()->id(),
+            ];
+
+            // Send notification to the user
+            Notification::notify([$user->id], $notificationData);
+
+        } catch (\Exception $e) {
+            // Log error but don't fail the approval
+            \Log::error('Failed to send approval notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify user when their account is rejected
+     */
+    private function notifyUserRejection($user)
+    {
+        try {
+            // Determine user type for display
+            $userTypeDisplay = match($user->role) {
+                'purok_leader' => 'Purok Leader',
+                'business_owner' => 'Business Owner',
+                'admin' => 'Admin',
+                'staff' => 'Staff',
+                default => 'User'
+            };
+
+            // Notification to the rejected user
+            $userNotificationData = [
+                'title' => 'Account Registration Declined',
+                'message' => "We're sorry, but your {$userTypeDisplay} account registration has been declined.",
+                'description' => "If you believe this is an error, please contact support. Email: {$user->email}",
+                'type' => 'account',
+                'priority' => 'high',
+                'action_url' => null,
+                'metadata' => [
+                    'user_id' => $user->id,
+                    'user_role' => $user->role,
+                    'action' => 'rejection',
+                    'status' => 'rejected',
+                ],
+                'triggered_by_id' => auth()->id(),
+            ];
+
+            // Send notification to the rejected user
+            Notification::notify([$user->id], $userNotificationData);
+
+            // Notify admins and staff (except the one who triggered the rejection)
+            $adminAndStaffIds = User::whereIn('role', ['admin', 'staff'])
+                ->where('id', '!=', auth()->id()) // Exclude the one who rejected
+                ->pluck('id')
+                ->toArray();
+
+            if (!empty($adminAndStaffIds)) {
+                $adminBy = auth()->user();
+                $rejectorName = $adminBy ? $adminBy->fullname : 'Admin';
+
+                $adminNotificationData = [
+                    'title' => 'User Registration Rejected',
+                    'message' => "{$rejectorName} rejected {$userTypeDisplay} registration: {$user->fullname}",
+                    'description' => "Email: {$user->email} | Location: {$user->purok}, {$user->barangay}, {$user->city_municipality} | Rejected by: {$rejectorName}",
+                    'type' => 'account',
+                    'priority' => 'medium',
+                    'action_url' => "/users",
+                    'metadata' => [
+                        'user_id' => $user->id,
+                        'user_role' => $user->role,
+                        'user_email' => $user->email,
+                        'action' => 'rejection',
+                        'status' => 'rejected',
+                        'rejected_by' => $rejectorName,
+                    ],
+                    'triggered_by_id' => auth()->id(),
+                ];
+
+                // Send notification to other admins and staff
+                Notification::notify($adminAndStaffIds, $adminNotificationData);
+            }
+
+        } catch (\Exception $e) {
+            // Log error but don't fail the rejection
+            \Log::error('Failed to send rejection notification: ' . $e->getMessage());
+        }
     }
 }

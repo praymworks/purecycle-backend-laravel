@@ -274,12 +274,15 @@ class NotificationController extends Controller
 
     /**
      * Create notification (Admin/Staff only)
+     * Accepts either 'roles' or 'user_ids'
      */
     public function store(Request $request)
     {
         try {
             $validator = Validator::make($request->all(), [
-                'user_ids' => 'required|array',
+                'roles' => 'required_without:user_ids|array',
+                'roles.*' => 'string|in:admin,staff,purok_leader,business_owner,user',
+                'user_ids' => 'required_without:roles|array',
                 'user_ids.*' => 'exists:users,id',
                 'title' => 'required|string|max:255',
                 'message' => 'required|string',
@@ -299,8 +302,26 @@ class NotificationController extends Controller
             }
 
             $data = $validator->validated();
-            $userIds = $data['user_ids'];
-            unset($data['user_ids']);
+            
+            // Get user IDs based on roles or use provided user_ids
+            if (isset($data['roles']) && !empty($data['roles'])) {
+                // Fetch user IDs based on roles
+                $userIds = \App\Models\User::whereIn('role', $data['roles'])->pluck('id')->toArray();
+                
+                if (empty($userIds)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No users found with the specified roles',
+                        'roles_searched' => $data['roles']
+                    ], 404);
+                }
+                
+                unset($data['roles']);
+            } else {
+                // Use provided user_ids
+                $userIds = $data['user_ids'];
+                unset($data['user_ids']);
+            }
 
             // Set triggered_by_id to current user
             $data['triggered_by_id'] = auth()->id();
@@ -313,6 +334,7 @@ class NotificationController extends Controller
                 'message' => 'Notifications created successfully',
                 'data' => [
                     'count' => count($notifications),
+                    'user_count' => count($userIds),
                     'notifications' => $notifications
                 ]
             ], 201);
