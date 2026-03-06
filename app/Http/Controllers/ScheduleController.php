@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use App\Helpers\DateTimeHelper;
 
 class ScheduleController extends Controller
 {
@@ -60,9 +61,17 @@ class ScheduleController extends Controller
             // Pagination
             $schedules = $query->get();
 
+            // Format each schedule for frontend (ensure date is YYYY-MM-DD, day is calculated from date)
+            $formattedSchedules = $schedules->map(function ($schedule) {
+                // Auto-correct the 'day' field based on actual date
+                $schedule->day = DateTimeHelper::getDayName($schedule->date);
+                
+                return $schedule;
+            });
+
             return response()->json([
                 'success' => true,
-                'data' => $schedules
+                'data' => $formattedSchedules
             ], 200);
 
         } catch (\Exception $e) {
@@ -205,6 +214,11 @@ class ScheduleController extends Controller
 
             $data = $validator->validated();
 
+            // Auto-update the 'day' field based on the 'date' if date is being updated
+            if (isset($data['date'])) {
+                $data['day'] = DateTimeHelper::getDayName($data['date']);
+            }
+
             $schedule->update($data);
 
             return response()->json([
@@ -271,6 +285,7 @@ class ScheduleController extends Controller
             $validator = Validator::make($request->all(), [
                 'status' => 'required|in:active,completed,cancelled,pending',
                 'cancel_reason' => 'nullable|string',
+                'notes' => 'nullable|string',
             ]);
 
             if ($validator->fails()) {
@@ -283,8 +298,14 @@ class ScheduleController extends Controller
 
             $data = ['status' => $request->status];
 
+            // Update cancel reason if status is cancelled
             if ($request->status === 'cancelled' && $request->has('cancel_reason')) {
                 $data['cancel_reason'] = $request->cancel_reason;
+            }
+
+            // Update notes if provided (regardless of status)
+            if ($request->has('notes')) {
+                $data['notes'] = $request->notes;
             }
 
             $schedule->update($data);
