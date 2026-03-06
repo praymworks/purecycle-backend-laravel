@@ -115,6 +115,21 @@ class ScheduleController extends Controller
 
             $data = $validator->validated();
 
+            // Check if a schedule already exists for this date and route
+            $existingSchedule = Schedule::where('date', $data['date'])
+                ->where('route_id', $data['route_id'] ?? null)
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($existingSchedule) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A schedule already exists for this date and route',
+                    'existing_schedule' => $existingSchedule->schedule_id,
+                    'duplicate' => true
+                ], 409); // 409 Conflict
+            }
+
             // Generate schedule ID
             $data['schedule_id'] = Schedule::generateScheduleId();
 

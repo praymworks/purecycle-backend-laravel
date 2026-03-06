@@ -401,9 +401,9 @@ class ReportController extends Controller
                 $endDate = now();
             }
 
-            // Group reports by area and count
+            // Group reports by area and count with date filter (using date_submitted)
             $query = Report::selectRaw("$groupBy as area, COUNT(*) as reports")
-                ->whereBetween('created_at', [$startDate, $endDate])
+                ->whereBetween('date_submitted', [$startDate, $endDate])
                 ->whereNotNull($groupBy)
                 ->where($groupBy, '!=', '')
                 ->groupBy($groupBy)

@@ -19,12 +19,12 @@ class AnalyticsController extends Controller
     {
         try {
             $stats = [
-                'total_users' => User::where('status', 'approved')->count(),
+                'total_users' => User::count(), // Total all users
                 'active_routes' => Route::status('active')->count(),
                 'completed_collections' => Schedule::count(),
                 'pending_reports' => Report::status('Pending')->count(),
                 'active_schedules' => Schedule::status('active')->count(),
-                'total_announcements' => Announcement::count(),
+                'total_announcements' => Announcement::count(), // Total all announcements
             ];
 
             return response()->json([
@@ -351,7 +351,7 @@ class AnalyticsController extends Controller
     private function getUserData()
     {
         return [
-            'total' => User::count(),
+            'total' => User::count(), // Total all users regardless of status
             'active' => User::where('status', 'approved')->count(),
             'pending' => User::where('status', 'pending')->count(),
         ];
