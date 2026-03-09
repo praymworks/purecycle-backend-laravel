@@ -37,7 +37,8 @@ class Schedule extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'date' => 'date',
+        // Removed 'date' casting - keep as string to avoid timezone conversion
+        // Database column is already DATE type, no need for Carbon casting
         'start_time' => 'datetime:H:i:s',
         'end_time' => 'datetime:H:i:s',
         'stops' => 'array',

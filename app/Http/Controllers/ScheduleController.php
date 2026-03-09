@@ -68,17 +68,11 @@ class ScheduleController extends Controller
             // Pagination
             $schedules = $query->get();
 
-            // Format each schedule for frontend (ensure date is YYYY-MM-DD, day is calculated from date)
-            $formattedSchedules = $schedules->map(function ($schedule) {
-                // Auto-correct the 'day' field based on actual date
-                $schedule->day = DateTimeHelper::getDayName($schedule->date);
-                
-                return $schedule;
-            });
-
+            // Return schedules as-is (no auto-correction needed)
+            // The 'day' field should already be correct from when it was created
             return response()->json([
                 'success' => true,
-                'data' => $formattedSchedules
+                'data' => $schedules
             ], 200);
 
         } catch (\Exception $e) {
@@ -99,7 +93,7 @@ class ScheduleController extends Controller
             $validator = Validator::make($request->all(), [
                 'route_id' => 'nullable|exists:routes,id',
                 'garbage_truck' => 'required|string|in:White Garbage Truck,Red Garbage Truck',
-                'day' => 'required|string|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday',
+                'day' => 'required|string|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday',
                 'date' => 'required|date',
                 'start_time' => 'sometimes|date_format:H:i:s',
                 'end_time' => 'nullable|date_format:H:i:s',
@@ -122,6 +116,11 @@ class ScheduleController extends Controller
             }
 
             $data = $validator->validated();
+
+            // Auto-calculate day from date if not provided or incorrect
+            if (isset($data['date'])) {
+                $data['day'] = DateTimeHelper::getDayName($data['date']);
+            }
 
             // Check if a schedule already exists for this date, route, and truck
             $existingSchedule = Schedule::where('date', $data['date'])
