@@ -23,6 +23,7 @@ return [
         'http://localhost:5173',
         'http://localhost:3000',
         'http://localhost:3040',
+        'http://localhost:8081', // Expo mobile app
         'https://pure-cycle.online',
         'https://www.pure-cycle.online',
         'https://web.pure-cycle.online',

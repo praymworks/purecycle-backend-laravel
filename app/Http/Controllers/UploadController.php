@@ -41,16 +41,16 @@ class UploadController extends Controller
                 // Move file to public directory
                 $file->move($uploadPath, $filename);
 
-                // Generate URL
-                $url = url('uploads/images/id/' . $filename);
+                // Generate full URL (to be saved in database)
+                $fullUrl = url('uploads/images/id/' . $filename);
 
                 return response()->json([
                     'success' => true,
                     'message' => 'Valid ID uploaded successfully',
                     'data' => [
                         'filename' => $filename,
-                        'url' => $url,
-                        'path' => 'uploads/images/id/' . $filename
+                        'url' => $fullUrl,  // Full URL for database storage
+                        'path' => $fullUrl  // Also return as 'path' for backward compatibility
                     ]
                 ], 200);
             }
@@ -102,16 +102,16 @@ class UploadController extends Controller
                 // Move file to public directory
                 $file->move($uploadPath, $filename);
 
-                // Generate URL
-                $url = url('uploads/images/business_permit/' . $filename);
+                // Generate full URL (to be saved in database)
+                $fullUrl = url('uploads/images/business_permit/' . $filename);
 
                 return response()->json([
                     'success' => true,
                     'message' => 'Business permit uploaded successfully',
                     'data' => [
                         'filename' => $filename,
-                        'url' => $url,
-                        'path' => 'uploads/images/business_permit/' . $filename
+                        'url' => $fullUrl,  // Full URL for database storage
+                        'path' => $fullUrl  // Also return as 'path' for backward compatibility
                     ]
                 ], 200);
             }
@@ -163,16 +163,16 @@ class UploadController extends Controller
                 // Move file to public directory
                 $file->move($uploadPath, $filename);
 
-                // Generate URL
-                $url = url('uploads/images/profile_path/' . $filename);
+                // Generate full URL (to be saved in database)
+                $fullUrl = url('uploads/images/profile_path/' . $filename);
 
                 return response()->json([
                     'success' => true,
                     'message' => 'Profile picture uploaded successfully',
                     'data' => [
                         'filename' => $filename,
-                        'url' => $url,
-                        'path' => 'uploads/images/profile_path/' . $filename
+                        'url' => $fullUrl,  // Full URL for database storage
+                        'path' => $fullUrl  // Also return as 'path' for backward compatibility
                     ]
                 ], 200);
             }
@@ -186,6 +186,68 @@ class UploadController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload profile picture',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Upload report image
+     * Returns full URL to be saved in database (not relative path)
+     */
+    public function uploadReportImage(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'file' => 'required|image|mimes:jpeg,png,jpg,gif|max:5120', // 5MB max
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            if ($request->hasFile('file')) {
+                $file = $request->file('file');
+                
+                // Create directory if it doesn't exist
+                $uploadPath = public_path('uploads/images/reports');
+                if (!File::exists($uploadPath)) {
+                    File::makeDirectory($uploadPath, 0755, true);
+                }
+
+                // Generate unique filename
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                
+                // Move file to public directory
+                $file->move($uploadPath, $filename);
+
+                // Generate full URL (this is what should be saved in database)
+                $fullUrl = url('uploads/images/reports/' . $filename);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Report image uploaded successfully',
+                    'data' => [
+                        'filename' => $filename,
+                        'path' => $fullUrl,  // Full URL for database storage
+                        'url' => $fullUrl    // Full URL for display (same as path)
+                    ]
+                ], 200);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'No file uploaded'
+            ], 400);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload report image',
                 'error' => $e->getMessage()
             ], 500);
         }

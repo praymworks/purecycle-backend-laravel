@@ -83,20 +83,11 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // Check if user role is allowed (admin or staff only for admin portal)
-        if (!in_array($user->role, ['admin', 'staff'])) {
-            // Log unauthorized access attempt
-            $this->logUnauthorizedAccess($user);
-            
-            // Notify admins about unauthorized access attempt
-            $this->notifyAdminsAboutUnauthorizedAccess($user);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Access denied. Only administrators and staff can access this portal.'
-            ], 403);
-        }
-
+        // NOTE: Role-based access is now handled by:
+        // 1. Frontend applications (web portal checks for admin/staff, mobile app checks for purok_leader/business_owner)
+        // 2. Backend middleware on protected routes (role:admin, role:admin,staff)
+        // This login endpoint is intentionally open to all roles as documented in API_DOCUMENTATION.md
+        
         // Load additional data based on role
         $userData = $user->toArray();
         

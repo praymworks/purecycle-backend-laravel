@@ -140,12 +140,14 @@ class NotificationController extends Controller
                 ], 404);
             }
 
-            $notification->update(['unread' => false]);
+            $notification->update([
+                'unread' => false
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Notification marked as read',
-                'data' => $notification->load(['user', 'triggeredBy'])
+                'data' => $notification->fresh(['user', 'triggeredBy'])
             ], 200);
 
         } catch (\Exception $e) {
@@ -173,12 +175,14 @@ class NotificationController extends Controller
                 ], 404);
             }
 
-            $notification->update(['unread' => true]);
+            $notification->update([
+                'unread' => true
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Notification marked as unread',
-                'data' => $notification->load(['user', 'triggeredBy'])
+                'data' => $notification->fresh(['user', 'triggeredBy'])
             ], 200);
 
         } catch (\Exception $e) {
@@ -200,7 +204,9 @@ class NotificationController extends Controller
             
             Notification::where('user_id', $userId)
                 ->unread()
-                ->update(['unread' => false]);
+                ->update([
+                    'unread' => false
+                ]);
 
             return response()->json([
                 'success' => true,

@@ -7,6 +7,7 @@ use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Report;
 use App\Models\Announcement;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -363,5 +364,113 @@ class AnalyticsController extends Controller
             'total' => Announcement::count(),
             'active' => Announcement::status('Active')->count(),
         ];
+    }
+
+    /**
+     * Get mobile dashboard data for purok_leader and business_owner
+     */
+    public function mobileDashboard(Request $request)
+    {
+        try {
+            $user = auth()->user();
+
+            // Get user's reports (using correct column: reporter_id, not user_id)
+            $myReports = Report::where('reporter_id', $user->id)->count();
+            $myPendingReports = Report::where('reporter_id', $user->id)
+                ->where('status', 'Pending')
+                ->count();
+            $myResolvedReports = Report::where('reporter_id', $user->id)
+                ->where('status', 'Resolved')
+                ->count();
+
+            // Get schedules for current week (Monday-Saturday)
+            $today = now();
+            $dayOfWeek = $today->dayOfWeek;
+            $daysFromMonday = $dayOfWeek === 0 ? 6 : $dayOfWeek - 1;
+            
+            $monday = (clone $today)->subDays($daysFromMonday)->startOfDay();
+            $saturday = (clone $monday)->addDays(5)->endOfDay();
+
+            // Filter schedules by user's location
+            $userBarangay = $user->barangay;
+            $userPurok = $user->purok;
+            
+            $allSchedules = Schedule::with('route')
+                ->whereBetween('date', [$monday, $saturday])
+                ->whereIn('status', ['active', 'pending'])
+                ->get();
+
+            $mySchedulesCount = 0;
+            foreach ($allSchedules as $schedule) {
+                if (!$schedule->route || !$schedule->route->waypoints) {
+                    continue;
+                }
+                
+                $waypoints = $schedule->route->waypoints;
+                foreach ($waypoints as $waypoint) {
+                    $waypointBarangay = $waypoint['barangay'] ?? null;
+                    $waypointPurok = $waypoint['purok'] ?? $waypoint['sitio'] ?? $waypoint['purok_sitio'] ?? null;
+
+                    if ($waypointBarangay === $userBarangay) {
+                        if (empty($userPurok) || $waypointPurok === $userPurok) {
+                            $mySchedulesCount++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Get unread notifications
+            $unreadNotifications = Notification::where('user_id', $user->id)
+                ->where('unread', true)
+                ->count();
+
+            // Get recent activity (last 3 reports) - using correct relationship: updatedBy
+            $recentReports = Report::where('reporter_id', $user->id)
+                ->with('updatedBy:id,name')
+                ->latest()
+                ->take(3)
+                ->get()
+                ->map(function($report) {
+                    return [
+                        'id' => $report->id,
+                        'type' => $report->complaint, // complaint field contains the report description
+                        'status' => $report->status,
+                        'date' => $report->created_at->format('Y-m-d'),
+                        'time' => $report->created_at->format('h:i A'),
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'user' => [
+                        'name' => $user->name,
+                        'role' => $user->role,
+                        'barangay' => $user->barangay,
+                        'purok' => $user->purok,
+                    ],
+                    'stats' => [
+                        'total_reports' => $myReports,
+                        'pending_reports' => $myPendingReports,
+                        'resolved_reports' => $myResolvedReports,
+                        'upcoming_schedules' => $mySchedulesCount,
+                        'unread_notifications' => $unreadNotifications,
+                    ],
+                    'recent_activity' => $recentReports,
+                    'week_range' => [
+                        'start' => $monday->format('Y-m-d'),
+                        'end' => $saturday->format('Y-m-d'),
+                    ],
+                ],
+                'message' => 'Mobile dashboard data retrieved successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch mobile dashboard data',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

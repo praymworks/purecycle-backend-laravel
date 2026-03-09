@@ -14,6 +14,7 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\MobileController;
 
 // Public routes
 Route::post('/auth/login', [AuthController::class, 'login']);
@@ -26,6 +27,7 @@ Route::get('/settings/maintenance', [SettingsController::class, 'getMaintenanceM
 Route::post('/upload/valid-id', [UploadController::class, 'uploadValidId']);
 Route::post('/upload/business-permit', [UploadController::class, 'uploadBusinessPermit']);
 Route::post('/upload/profile-picture', [UploadController::class, 'uploadProfilePicture']);
+Route::post('/upload/report-image', [UploadController::class, 'uploadReportImage']);
 Route::post('/upload/announcement-attachment', [UploadController::class, 'uploadAnnouncementAttachment']);
 Route::post('/upload/delete', [UploadController::class, 'deleteFile']);
 
@@ -49,6 +51,12 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/reports', [ReportController::class, 'index']);
     Route::get('/reports/statistics', [ReportController::class, 'statistics']);
     Route::get('/reports/ranking', [ReportController::class, 'reportRanking']);
+    
+    // My Reports - MUST come BEFORE /reports/{id} to avoid route conflict
+    // Only for purok_leader and business_owner (returns their own reports only)
+    Route::get('/reports/my-reports', [ReportController::class, 'myReports'])
+        ->middleware('role:purok_leader,business_owner');
+    
     Route::get('/reports/{id}', [ReportController::class, 'show']);
     Route::post('/reports', [ReportController::class, 'store']);
     
@@ -66,6 +74,12 @@ Route::middleware(['jwt.auth'])->group(function () {
     // Schedule management routes (accessible to all authenticated users)
     Route::get('/schedules', [ScheduleController::class, 'index']);
     Route::get('/schedules/statistics', [ScheduleController::class, 'statistics']);
+    
+    // Mobile schedules - MUST come BEFORE /schedules/{id} to avoid route conflict
+    // Only for purok_leader and business_owner (mobile app)
+    Route::get('/schedules/mobile', [ScheduleController::class, 'mobileSchedules'])
+        ->middleware('role:purok_leader,business_owner');
+    
     Route::get('/schedules/{id}', [ScheduleController::class, 'show']);
     
     // Analytics routes (accessible to all authenticated users)
@@ -75,6 +89,19 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::get('/analytics/report-analytics', [AnalyticsController::class, 'reportAnalytics']);
     Route::get('/analytics/user-activity', [AnalyticsController::class, 'userActivity']);
     Route::get('/analytics/dashboard', [AnalyticsController::class, 'dashboard']);
+    Route::get('/analytics/mobile-dashboard', [AnalyticsController::class, 'mobileDashboard'])
+        ->middleware('role:purok_leader,business_owner');
+    
+    // Mobile App API routes (purok_leader and business_owner only)
+    Route::middleware(['role:purok_leader,business_owner'])->prefix('mobile')->group(function () {
+        Route::get('/location', [MobileController::class, 'getLocation']);
+        Route::get('/profile', [MobileController::class, 'getProfile']);
+        Route::get('/dashboard', [MobileController::class, 'getDashboard']);
+        Route::get('/collections/upcoming', [MobileController::class, 'getUpcomingCollections']);
+        Route::get('/collections/today', [MobileController::class, 'getTodayCollection']);
+        Route::get('/waste-guide', [MobileController::class, 'getWasteGuide']);
+        Route::get('/announcements', [MobileController::class, 'getAnnouncements']);
+    });
     
     // Notification routes (accessible to all authenticated users)
     Route::get('/notifications', [NotificationController::class, 'index']);

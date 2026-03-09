@@ -15,11 +15,19 @@ class ReportController extends Controller
      * Display a listing of reports.
      * Supports filtering by status, priority, barangay, purok, reporter_role
      * Supports search by complaint text or reporter name
+     * 
+     * NOTE: This endpoint is for admin and staff to view ALL reports.
+     * For purok_leader and business_owner, use /reports/my-reports instead.
      */
     public function index(Request $request)
     {
         try {
             $query = Report::with(['reporter', 'updatedBy']);
+
+            // Filter by reporter_id if provided
+            if ($request->has('reporter_id') && $request->reporter_id != '') {
+                $query->where('reporter_id', $request->reporter_id);
+            }
 
             // Filter by status
             if ($request->has('status') && $request->status != '') {
@@ -80,12 +88,92 @@ class ReportController extends Controller
     }
 
     /**
+     * Display a listing of the authenticated user's own reports.
+     * This endpoint is specifically for purok_leader and business_owner roles.
+     * Only returns reports where reporter_id matches the authenticated user's ID.
+     */
+    public function myReports(Request $request)
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            // Verify user role (must be purok_leader or business_owner)
+            if (!in_array($user->role, ['purok_leader', 'business_owner'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Access denied. This endpoint is only for Purok Leaders and Business Owners.'
+                ], 403);
+            }
+
+            // Query reports belonging to the authenticated user
+            $query = Report::with(['reporter', 'updatedBy'])
+                ->where('reporter_id', $user->id);
+
+            // Filter by status
+            if ($request->has('status') && $request->status != '') {
+                $query->status($request->status);
+            }
+
+            // Filter by priority
+            if ($request->has('priority') && $request->priority != '') {
+                $query->priority($request->priority);
+            }
+
+            // Search by complaint or report ID
+            if ($request->has('search') && $request->search != '') {
+                $search = $request->search;
+                $query->where(function($q) use ($search) {
+                    $q->where('complaint', 'like', "%{$search}%")
+                      ->orWhere('report_id', 'like', "%{$search}%");
+                });
+            }
+
+            // Sort by date submitted (newest first by default)
+            $sortBy = $request->get('sort_by', 'date_submitted');
+            $sortOrder = $request->get('sort_order', 'desc');
+            $query->orderBy($sortBy, $sortOrder);
+
+            // Pagination (default 5 per page for mobile app)
+            $perPage = $request->get('per_page', 5);
+            $reports = $query->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $reports,
+                'message' => "Showing your reports only"
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch your reports',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Store a newly created report.
+     * 
+     * Note: The photo field can accept either:
+     * 1. An uploaded file (for form-based submissions)
+     * 2. A string path (for mobile app - image uploaded separately via /upload/report-image)
      */
     public function store(Request $request)
     {
         try {
-            $validator = Validator::make($request->all(), [
+            // Determine if photo is a file upload or a path string
+            $photoIsFile = $request->hasFile('photo');
+            
+            // Build validation rules dynamically based on photo type
+            $rules = [
                 'reporter_id' => 'required|exists:users,id',
                 'reporter_name' => 'required|string|max:255',
                 'reporter_role' => 'required|string|in:Purok Leader,Business Owner',
@@ -94,11 +182,21 @@ class ReportController extends Controller
                 'priority' => 'sometimes|in:Low,Moderate,Urgent',
                 'status' => 'sometimes|in:Pending,In Progress,Resolved,Rejected',
                 'complaint' => 'required|string',
-                'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
                 'date_submitted' => 'sometimes|date',
                 'staff_remarks' => 'nullable|string',
                 'resolved_date' => 'nullable|date',
-            ]);
+            ];
+
+            // Add photo validation based on type
+            if ($photoIsFile) {
+                // If it's a file upload, validate as image
+                $rules['photo'] = 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120';
+            } else {
+                // If it's a string path (from mobile app), validate as string
+                $rules['photo'] = 'nullable|string|max:500';
+            }
+
+            $validator = Validator::make($request->all(), $rules);
 
             if ($validator->fails()) {
                 return response()->json([
@@ -118,13 +216,14 @@ class ReportController extends Controller
                 $data['date_submitted'] = now()->toDateString();
             }
 
-            // Handle photo upload
-            if ($request->hasFile('photo')) {
+            // Handle photo upload (if file was uploaded)
+            if ($photoIsFile) {
                 $photo = $request->file('photo');
                 $filename = time() . '_' . $photo->getClientOriginalName();
                 $path = $photo->storeAs('reports', $filename, 'public');
                 $data['photo'] = $path;
             }
+            // If photo is a string path (mobile app flow), it's already in $data['photo']
 
             $report = Report::create($data);
 
@@ -177,6 +276,10 @@ class ReportController extends Controller
 
     /**
      * Update the specified report.
+     * 
+     * Note: The photo field can accept either:
+     * 1. An uploaded file (for form-based submissions)
+     * 2. A string path (for mobile app - image uploaded separately via /upload/report-image)
      */
     public function update(Request $request, $id)
     {
@@ -190,7 +293,11 @@ class ReportController extends Controller
                 ], 404);
             }
 
-            $validator = Validator::make($request->all(), [
+            // Determine if photo is a file upload or a path string
+            $photoIsFile = $request->hasFile('photo');
+            
+            // Build validation rules dynamically based on photo type
+            $rules = [
                 'reporter_id' => 'sometimes|exists:users,id',
                 'reporter_name' => 'sometimes|string|max:255',
                 'reporter_role' => 'sometimes|string|in:Purok Leader,Business Owner',
@@ -199,11 +306,21 @@ class ReportController extends Controller
                 'priority' => 'sometimes|in:Low,Moderate,Urgent',
                 'status' => 'sometimes|in:Pending,In Progress,Resolved,Rejected',
                 'complaint' => 'sometimes|string',
-                'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
                 'date_submitted' => 'sometimes|date',
                 'staff_remarks' => 'nullable|string',
                 'resolved_date' => 'nullable|date',
-            ]);
+            ];
+
+            // Add photo validation based on type
+            if ($photoIsFile) {
+                // If it's a file upload, validate as image
+                $rules['photo'] = 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120';
+            } else {
+                // If it's a string path (from mobile app), validate as string
+                $rules['photo'] = 'nullable|string|max:500';
+            }
+
+            $validator = Validator::make($request->all(), $rules);
 
             if ($validator->fails()) {
                 return response()->json([
@@ -215,8 +332,8 @@ class ReportController extends Controller
 
             $data = $validator->validated();
 
-            // Handle photo upload
-            if ($request->hasFile('photo')) {
+            // Handle photo upload (if file was uploaded)
+            if ($photoIsFile) {
                 // Delete old photo if exists
                 if ($report->photo && Storage::disk('public')->exists($report->photo)) {
                     Storage::disk('public')->delete($report->photo);
@@ -227,6 +344,7 @@ class ReportController extends Controller
                 $path = $photo->storeAs('reports', $filename, 'public');
                 $data['photo'] = $path;
             }
+            // If photo is a string path (mobile app flow), it's already in $data['photo']
 
             // Store old status before update
             $oldStatus = $report->status;
